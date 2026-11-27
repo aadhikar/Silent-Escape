@@ -12,14 +12,17 @@ using UnityEngine;
 public class MazeGenerator : MonoBehaviour
 {
     [Header("Maze settings")]
-    public int cells = 12;          // maze is cells x cells (use 8 or more)
+    public int cells = 14;          // maze is cells x cells (use 8 or more)
     public float tileSize = 3f;
     public float wallHeight = 3f;
     public int seed = 0;            // 0 = random every time
 
     [Header("Extra paths")]
-    public int rooms = 5;           // open 3x3 rooms (more space to hide / run around)
-    public int shortcuts = 25;      // extra openings that make loops
+    public int rooms = 8;           // open 3x3 rooms (more space to hide / run around)
+    public int shortcuts = 45;      // extra openings that make loops
+    [Range(0f, 1f)]
+    public float braid = 0.7f;      // chance that a dead end gets opened up (no more traps)
+    public int randomDoors = 14;    // shutter doors set into walls: extra shortcuts that open and close
 
     public Vector3 PlayerStart { get; private set; }
     public Vector3 ExitPosition { get; private set; }
@@ -41,6 +44,7 @@ public class MazeGenerator : MonoBehaviour
     Vector2Int[] doorTiles = new Vector2Int[4];   // index 1..3
     Vector2Int[] keyTiles = new Vector2Int[4];    // index 1..3
     Transform worldRoot;
+    HashSet<Vector2Int> randomDoorTiles = new HashSet<Vector2Int>();
 
     static readonly Vector2Int[] steps =
     {
@@ -62,6 +66,8 @@ public class MazeGenerator : MonoBehaviour
             PlaceDoors();
             FindRegions();
             AddRoomsAndShortcuts();
+            BraidDeadEnds();
+            ChooseShutterTiles();
             ChooseKeyTiles();
             if (LayoutIsValid()) break;
             Debug.LogWarning("Layout " + CurrentSeed + " failed the check, trying the next seed.");
@@ -73,6 +79,7 @@ public class MazeGenerator : MonoBehaviour
         BuildDoorObjects();   // doors are made AFTER the bake so the NavMesh has no hole
         SpawnKeys();
         BuildLights();
+        BuildRandomDoors();
     }
 
     // Positions of all floor tiles in a region (used to spawn enemies)
@@ -81,7 +88,7 @@ public class MazeGenerator : MonoBehaviour
         List<Vector3> list = new List<Vector3>();
         for (int x = 0; x < size; x++)
             for (int y = 0; y < size; y++)
-                if (open[x, y] && doorLevel[x, y] == 0 && region[x, y] == level)
+                if (open[x, y] && doorLevel[x, y] == 0 && region[x, y] == level && !randomDoorTiles.Contains(new Vector2Int(x, y)))
                     list.Add(TileToWorld(new Vector2Int(x, y)));
         return list;
     }
@@ -283,6 +290,156 @@ public class MazeGenerator : MonoBehaviour
         }
     }
 
+    // Dead ends are traps. Open most of them so you can always turn around.
+    // (Only joins tiles of the same region, never next to a locked door.)
+    void BraidDeadEnds()
+    {
+        Vector2Int[] jumps =
+        {
+            new Vector2Int(0, 2), new Vector2Int(0, -2), new Vector2Int(2, 0), new Vector2Int(-2, 0)
+        };
+
+        for (int x = 1; x < size - 1; x += 2)
+        {
+            for (int y = 1; y < size - 1; y += 2)
+            {
+                Vector2Int cell = new Vector2Int(x, y);
+                if (!open[x, y] || OpenNeighbours(cell) != 1) continue;
+                if (cell == startTile || cell == exitTile || doorLevel[x, y] > 0) continue;
+                if (Random.value > braid) continue;
+
+                List<Vector2Int> options = new List<Vector2Int>();
+                foreach (Vector2Int j in jumps)
+                {
+                    Vector2Int other = cell + j;
+                    Vector2Int wall = cell + j / 2;
+                    if (other.x < 1 || other.y < 1 || other.x > size - 2 || other.y > size - 2) continue;
+                    if (open[wall.x, wall.y] || !open[other.x, other.y]) continue;
+                    if (doorLevel[other.x, other.y] > 0 || region[other.x, other.y] != region[x, y]) continue;
+                    if (NearDoor(wall.x, wall.y)) continue;
+                    options.Add(wall);
+                }
+                if (options.Count == 0) continue;
+
+                Vector2Int pick = options[Random.Range(0, options.Count)];
+                open[pick.x, pick.y] = true;
+                region[pick.x, pick.y] = region[x, y];
+            }
+        }
+    }
+
+    // Shutter doors set INTO the maze walls (between two corridors of the same region).
+    // Closed they look like wall. Open they are a shortcut. They only ADD routes,
+    // they never sit on a main corridor, so they can never block your way.
+    void ChooseShutterTiles()
+    {
+        randomDoorTiles.Clear();
+        List<Vector2Int> candidates = new List<Vector2Int>();
+
+        for (int x = 1; x < size - 1; x++)
+        {
+            for (int y = 1; y < size - 1; y++)
+            {
+                if (open[x, y]) continue;
+
+                Vector2Int a, b, side1, side2;
+                if (x % 2 == 0 && y % 2 == 1)          // wall between two cells, left and right
+                {
+                    a = new Vector2Int(x - 1, y);  b = new Vector2Int(x + 1, y);
+                    side1 = new Vector2Int(x, y - 1);  side2 = new Vector2Int(x, y + 1);
+                }
+                else if (x % 2 == 1 && y % 2 == 0)     // wall between two cells, up and down
+                {
+                    a = new Vector2Int(x, y - 1);  b = new Vector2Int(x, y + 1);
+                    side1 = new Vector2Int(x - 1, y);  side2 = new Vector2Int(x + 1, y);
+                }
+                else continue;
+
+                if (!open[a.x, a.y] || !open[b.x, b.y]) continue;
+                if (open[side1.x, side1.y] || open[side2.x, side2.y]) continue;   // must sit inside a wall line
+                if (doorLevel[a.x, a.y] > 0 || doorLevel[b.x, b.y] > 0) continue;
+                if (region[a.x, a.y] != region[b.x, b.y]) continue;               // never around a locked door
+                if (NearDoor(x, y)) continue;
+                if (Mathf.Abs(x - startTile.x) + Mathf.Abs(y - startTile.y) < 6) continue;
+
+                candidates.Add(new Vector2Int(x, y));
+            }
+        }
+
+        // shuffle
+        for (int i = candidates.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            Vector2Int tmp = candidates[i];
+            candidates[i] = candidates[j];
+            candidates[j] = tmp;
+        }
+
+        List<Vector2Int> placed = new List<Vector2Int>();
+        foreach (Vector2Int t in candidates)
+        {
+            if (placed.Count >= randomDoors) break;
+
+            bool near = false;
+            foreach (Vector2Int q in placed)
+                if (Mathf.Abs(q.x - t.x) + Mathf.Abs(q.y - t.y) < 4) { near = true; break; }
+            if (near) continue;
+
+            Vector2Int a = (t.x % 2 == 0) ? new Vector2Int(t.x - 1, t.y) : new Vector2Int(t.x, t.y - 1);
+            open[t.x, t.y] = true;              // the wall tile becomes a doorway
+            region[t.x, t.y] = region[a.x, a.y];
+            placed.Add(t);
+            randomDoorTiles.Add(t);
+        }
+    }
+
+    void BuildRandomDoors()
+    {
+        Transform root = new GameObject("ShutterDoors").transform;
+        root.SetParent(transform, false);
+
+        Material shutterMat = Gfx.Textured(Gfx.ShutterTexture(), new Vector2(1f, 5f));
+        Material red = Gfx.Mat(new Color(1f, 0.15f, 0.1f), 2f);
+        Material green = Gfx.Mat(new Color(0.2f, 1f, 0.3f), 2f);
+        Material orange = Gfx.Mat(new Color(1f, 0.6f, 0.1f), 2f);
+
+        foreach (Vector2Int t in randomDoorTiles)
+        {
+            bool alongX = open[t.x - 1, t.y] && open[t.x + 1, t.y];     // you walk left-right through it
+            Vector3 scale = alongX ? new Vector3(0.4f, wallHeight, tileSize) : new Vector3(tileSize, wallHeight, 0.4f);
+            Vector3 center = TileToWorld(t);
+
+            GameObject d = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            d.name = "Shutter Door";
+            d.transform.SetParent(root, false);
+            d.transform.position = center + Vector3.up * wallHeight / 2f;
+            d.transform.localScale = scale;
+            d.GetComponent<Renderer>().sharedMaterial = shutterMat;
+
+            // two status lamps, one each side of the door
+            Renderer[] lamps = new Renderer[2];
+            for (int i = 0; i < 2; i++)
+            {
+                float side = i == 0 ? -0.3f : 0.3f;
+                Vector3 offset = alongX ? new Vector3(side, 0f, 0f) : new Vector3(0f, 0f, side);
+
+                GameObject lamp = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                lamp.name = "Shutter Lamp";
+                lamp.transform.SetParent(root, false);
+                lamp.transform.position = center + offset + Vector3.up * (wallHeight - 0.35f);
+                lamp.transform.localScale = Vector3.one * 0.18f;
+                Destroy(lamp.GetComponent<Collider>());
+                lamps[i] = lamp.GetComponent<Renderer>();
+            }
+
+            RandomDoor rd = d.AddComponent<RandomDoor>();
+            rd.lamps = lamps;
+            rd.redMat = red;
+            rd.greenMat = green;
+            rd.orangeMat = orange;
+        }
+    }
+
     bool CanOpenRoom(int x, int y)
     {
         int r = region[x, y];
@@ -335,7 +492,7 @@ public class MazeGenerator : MonoBehaviour
                 {
                     if (!open[x, y] || doorLevel[x, y] > 0 || region[x, y] != n - 1) continue;
                     Vector2Int t = new Vector2Int(x, y);
-                    if (t == startTile || t == exitTile || used.Contains(t)) continue;
+                    if (t == startTile || t == exitTile || used.Contains(t) || randomDoorTiles.Contains(t)) continue;
                     options.Add(t);
                     if (OpenNeighbours(t) == 1) deadEnds.Add(t);
                 }

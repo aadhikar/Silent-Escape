@@ -13,6 +13,7 @@ public class SpawnManager : MonoBehaviour
         Spawn<Guard>("Guard A", maze, 0);
         Spawn<Guard>("Guard B", maze, 1);
         Spawn<GuardDog>("Guard Dog", maze, 1);
+        Spawn<Guard>("Guard C", maze, 2);
         Spawn<Assassin>("Assassin", maze, 2);
     }
 
@@ -41,6 +42,10 @@ public class SpawnManager : MonoBehaviour
 
         if (typeof(T) == typeof(Assassin) && AudioManager.Instance != null)
             AudioManager.Instance.AttachHum(root);
+
+        EnemyVoice voice = root.AddComponent<EnemyVoice>();
+        voice.kind = typeof(T) == typeof(Guard) ? VoiceKind.Guard
+                   : (typeof(T) == typeof(GuardDog) ? VoiceKind.Dog : VoiceKind.Robot);
 
         for (int i = 0; i < patrolPointsPerEnemy; i++)
             enemy.patrolPoints.Add(region[Random.Range(0, region.Count)]);

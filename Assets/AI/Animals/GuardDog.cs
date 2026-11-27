@@ -93,7 +93,6 @@ public class GuardDog : EnemyBase
         {
             lastBarkTime = Time.time;
             NoiseSystem.Emit(transform.position, 14f);
-            if (AudioManager.Instance != null) AudioManager.Instance.BarkAt(transform.position);
         }
     }
 }

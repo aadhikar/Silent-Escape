@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 // All sounds are generated in code (no audio files needed).
@@ -17,6 +18,7 @@ public class AudioManager : MonoBehaviour
     {
         Instance = this;
         BuildClips();
+        BuildVoices();
 
         AddSource(ambient, true, 0.35f);
         heartSrc = AddSource(heartbeat, true, 0f);
@@ -104,6 +106,69 @@ public class AudioManager : MonoBehaviour
     // ------------------------------------------------------------
     // Sound synthesis
     // ------------------------------------------------------------
+    // ------------------------------------------------------------
+    // Voices (guard, dog, robot)
+    // Want real recordings? Put .wav files named like the keys below in Assets/Resources/Voices
+    // (guard_chase, guard_chase2, guard_suspicious, guard_search, dog_bark, dog_bark2, dog_growl,
+    //  dog_sniff, robot_scan, robot_chase, robot_chase2, robot_dash, robot_search). They replace the generated ones.
+    // ------------------------------------------------------------
+    Dictionary<string, AudioClip> voices = new Dictionary<string, AudioClip>();
+
+    public void Say(AudioSource source, string key, float volume = 1f)
+    {
+        AudioClip clip;
+        if (source == null || !voices.TryGetValue(key, out clip)) return;
+        source.pitch = 1f;
+        source.PlayOneShot(clip, volume);
+    }
+
+    public void DoorSound(AudioSource source)
+    {
+        source.pitch = Random.Range(0.9f, 1.1f);
+        source.PlayOneShot(doorOpen, 0.9f);
+    }
+
+    static string[] Ph(params string[] s) { return s; }
+
+    void AddVoice(string key, float[] data)
+    {
+        AudioClip custom = Resources.Load<AudioClip>("Voices/" + key);
+        if (custom != null) { voices[key] = custom; return; }
+        AudioClip clip = AudioClip.Create(key, data.Length, 1, rate, false);
+        clip.SetData(data, 0);
+        voices[key] = clip;
+    }
+
+    void BuildVoices()
+    {
+        // ---- GUARD: "Hello?" / "Hey... stop! stop!" / "Hmm..." ----
+        float[] hey = VoiceSynth.Normalize(VoiceSynth.Word(Ph("H", "EY"), 150f, 120f), 0.8f);
+        float[] stop1 = VoiceSynth.Normalize(VoiceSynth.Word(Ph("S", "T", "AA", "P"), 135f, 110f), 0.85f);
+        float[] stop2 = VoiceSynth.Normalize(VoiceSynth.Word(Ph("S", "T", "AA", "P"), 150f, 120f), 1f);
+        AddVoice("guard_chase", VoiceSynth.Join(hey, VoiceSynth.Silence(0.35f), stop1, VoiceSynth.Silence(0.15f), stop2));
+        AddVoice("guard_chase2", VoiceSynth.Join(stop1, VoiceSynth.Silence(0.12f), stop2));
+        AddVoice("guard_suspicious", VoiceSynth.Normalize(VoiceSynth.Word(Ph("H", "EH", "L", "OW"), 115f, 150f), 0.8f));
+        AddVoice("guard_search", VoiceSynth.Normalize(VoiceSynth.Word(Ph("MM"), 110f, 95f, 1f, 0.05f, 0.03f), 0.6f));
+
+        // ---- DOG: bark, double bark, growl, sniffing ----
+        float[] bark = VoiceSynth.Normalize(VoiceSynth.Word(Ph("BARK", "H"), 380f, 220f, 1f, 0.35f, 0f), 1f);
+        AddVoice("dog_bark", bark);
+        AddVoice("dog_bark2", VoiceSynth.Join(bark, VoiceSynth.Silence(0.1f), bark));
+        AddVoice("dog_growl", VoiceSynth.Growl(VoiceSynth.Word(Ph("GROWL"), 70f, 58f, 1f, 0.5f, 0.04f)));
+        AddVoice("dog_sniff", VoiceSynth.Normalize(VoiceSynth.Word(Ph("SN", "_", "SN", "_", "SN"), 100f, 100f), 0.5f));
+
+        // ---- ROBOT: flat robotic voice ----
+        float[] intruder = VoiceSynth.Word(Ph("IH", "N", "T", "R", "UW", "D", "ER"), 95f, 95f, 0.95f, 0.05f, 0f);
+        float[] detected = VoiceSynth.Word(Ph("D", "IH", "T", "EH", "K", "T", "IH", "D"), 95f, 95f, 0.95f, 0.05f, 0f);
+        float[] target = VoiceSynth.Word(Ph("T", "AA", "R", "G", "IH", "T"), 95f, 95f, 0.95f, 0.05f, 0f);
+        float[] located = VoiceSynth.Word(Ph("L", "OW", "K", "EY", "T", "IH", "D"), 95f, 95f, 0.95f, 0.05f, 0f);
+        AddVoice("robot_scan", VoiceSynth.Robotize(VoiceSynth.Word(Ph("S", "K", "AE", "N", "IH", "NG"), 95f, 95f, 0.95f, 0.05f, 0f)));
+        AddVoice("robot_chase", VoiceSynth.Robotize(VoiceSynth.Join(intruder, VoiceSynth.Silence(0.18f), detected)));
+        AddVoice("robot_chase2", VoiceSynth.Robotize(VoiceSynth.Join(target, VoiceSynth.Silence(0.18f), located)));
+        AddVoice("robot_dash", VoiceSynth.Robotize(VoiceSynth.Word(Ph("EH", "N", "G", "EY", "T", "SH"), 95f, 95f, 0.95f, 0.05f, 0f)));
+        AddVoice("robot_search", VoiceSynth.Robotize(VoiceSynth.Word(Ph("S", "ER", "T", "SH", "IH", "NG"), 95f, 95f, 0.95f, 0.05f, 0f)));
+    }
+
     AudioClip Make(string clipName, float seconds, System.Func<float, float> sample)
     {
         int n = Mathf.CeilToInt(seconds * rate);

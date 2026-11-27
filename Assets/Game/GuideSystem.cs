@@ -19,6 +19,11 @@ public class GuideSystem : MonoBehaviour
     LineRenderer line;
 
     bool bigMap;
+    bool showGuide = true;
+    Camera cam;
+    Color objectiveColor = Color.white;
+    string objectiveShort = "";
+    public int ObjectiveLevel { get; private set; }   // 1-3 = Red/Blue/Green key or door, 0 = exit
     bool hasObjective;
     string objectiveText = "";
     Vector3 objectivePos;
@@ -28,6 +33,7 @@ public class GuideSystem : MonoBehaviour
     {
         maze = m;
         player = p;
+        cam = player.GetComponentInChildren<Camera>();
 
         int n = maze.TileCount;
         known = new bool[n, n];
@@ -63,6 +69,7 @@ public class GuideSystem : MonoBehaviour
         RevealMap();
 
         if (Input.GetKeyDown(KeyCode.M)) bigMap = !bigMap;
+        if (Input.GetKeyDown(KeyCode.G)) showGuide = !showGuide;
 
         if (cooldownTimer > 0f) cooldownTimer -= Time.deltaTime;
         if (Input.GetKeyDown(KeyCode.H) && cooldownTimer <= 0f && hasObjective)
@@ -89,13 +96,15 @@ public class GuideSystem : MonoBehaviour
         hasObjective = true;
         for (int n = 1; n <= 3; n++)
         {
+            string colorName = Door.NameOf(n);
+
             if (!player.HasKey(n))
             {
                 KeyCard k = FindKey(n);
                 if (k != null)
                 {
-                    objectivePos = k.transform.position;
-                    objectiveText = "Find the " + Door.NameOf(n) + " key card";
+                    SetObjective(k.transform.position + Vector3.up * 0.3f, "Find the " + colorName + " key card",
+                                 colorName + " key", Door.ColorOf(n), n);
                     return;
                 }
             }
@@ -103,14 +112,22 @@ public class GuideSystem : MonoBehaviour
             Door d = FindDoor(n);
             if (d != null && !d.isOpen)
             {
-                objectivePos = d.transform.position;
-                objectiveText = "Go to the " + Door.NameOf(n) + " door";
+                SetObjective(d.transform.position, "Go to the " + colorName + " door",
+                             colorName + " door", Door.ColorOf(n), n);
                 return;
             }
         }
 
-        objectivePos = maze.ExitPosition;
-        objectiveText = "Reach the yellow exit pillar!";
+        SetObjective(maze.ExitPosition + Vector3.up * 1.5f, "Reach the yellow exit pillar", "Exit", Color.yellow, 0);
+    }
+
+    void SetObjective(Vector3 pos, string text, string shortName, Color color, int level)
+    {
+        objectivePos = pos;
+        objectiveText = text;
+        objectiveShort = shortName;
+        objectiveColor = color;
+        ObjectiveLevel = level;
     }
 
     KeyCard FindKey(int level)
@@ -190,33 +207,84 @@ public class GuideSystem : MonoBehaviour
     void OnGUI()
     {
         if (player == null || maze == null || mapTex == null) return;
-
-        // objective arrow + text
-        if (hasObjective)
+        if (showGuide && hasObjective)
         {
-            Vector3 to = objectivePos - player.transform.position;
-            to.y = 0f;
-            Vector3 fwd = player.transform.forward;
-            fwd.y = 0f;
-            float angle = Vector3.SignedAngle(fwd, to, Vector3.up);
-
-            if (showArrow)
-            {
-                Vector2 c = new Vector2(Screen.width / 2f, 48f);
-                GUIUtility.RotateAroundPivot(angle, c);
-                GUI.color = Color.cyan;
-                GUI.DrawTexture(new Rect(c.x - 20f, c.y - 20f, 40f, 40f), arrowTex);
-                GUI.matrix = Matrix4x4.identity;
-                GUI.color = Color.white;
-            }
-
-            Hud.Label(new Rect(0, 74, Screen.width, 28), "> " + objectiveText + "  [" + Mathf.RoundToInt(to.magnitude) + " M]", 20, Hud.Green, TextAnchor.MiddleCenter);
-
-            string hintText = cooldownTimer > 0f ? "ROUTE SCAN RECHARGING " + Mathf.CeilToInt(cooldownTimer) + "S" : "ROUTE SCAN READY [H]";
-            Hud.Label(new Rect(0, 100, Screen.width, 22), hintText, 14, new Color(0.4f, 0.8f, 0.9f), TextAnchor.MiddleCenter);
+            DrawArrow();
+            DrawWaypoint();
         }
+        DrawMap();
+    }
 
-        // map
+    static Color Bright(Color c)
+    {
+        return Color.Lerp(c, Color.white, 0.35f);   // blue is hard to read on dark, so lighten it
+    }
+
+    void DrawDiamond(Vector2 c, float size, Color color)
+    {
+        GUIUtility.RotateAroundPivot(45f, c);
+        GUI.color = color;
+        GUI.DrawTexture(new Rect(c.x - size / 2f, c.y - size / 2f, size, size), Texture2D.whiteTexture);
+        GUI.matrix = Matrix4x4.identity;
+        GUI.color = Color.white;
+    }
+
+    // Big arrow at the top. Its colour = the key / door you need next.
+    void DrawArrow()
+    {
+        Color c = Bright(objectiveColor);
+        Vector3 to = objectivePos - player.transform.position;
+        to.y = 0f;
+        Vector3 fwd = player.transform.forward;
+        fwd.y = 0f;
+        float angle = Vector3.SignedAngle(fwd, to, Vector3.up);
+
+        float cx = Screen.width / 2f;
+        GUI.color = new Color(0f, 0f, 0f, 0.45f);
+        GUI.DrawTexture(new Rect(cx - 34f, 8f, 68f, 68f), Texture2D.whiteTexture);
+
+        Vector2 center = new Vector2(cx, 42f);
+        GUIUtility.RotateAroundPivot(angle, center);
+        GUI.color = c;
+        GUI.DrawTexture(new Rect(center.x - 26f, center.y - 26f, 52f, 52f), arrowTex);
+        GUI.matrix = Matrix4x4.identity;
+        GUI.color = Color.white;
+
+        Hud.Label(new Rect(cx - 400f, 82f, 800f, 28f),
+            "> " + objectiveText + "  [" + Mathf.RoundToInt(to.magnitude) + " M]", 20, c, TextAnchor.MiddleCenter);
+
+        string hintText = cooldownTimer > 0f ? "ROUTE SCAN RECHARGING " + Mathf.CeilToInt(cooldownTimer) + "S" : "ROUTE SCAN READY [H]";
+        Hud.Label(new Rect(cx - 400f, 110f, 800f, 22f), hintText, 14, new Color(0.4f, 0.8f, 0.9f), TextAnchor.MiddleCenter);
+    }
+
+    // Marker floating on the screen where the target is (like a waypoint).
+    // If the target is off screen or behind you, it sticks to the edge of the screen.
+    void DrawWaypoint()
+    {
+        if (cam == null) return;
+
+        Vector3 sp = cam.WorldToScreenPoint(objectivePos);
+        bool behind = sp.z < 0f;
+        float x = sp.x;
+        float y = sp.y;
+        if (behind) { x = Screen.width - x; y = Screen.height - y; }
+
+        float margin = 50f;
+        if (behind) x = x < Screen.width / 2f ? margin : Screen.width - margin;
+        x = Mathf.Clamp(x, margin, Screen.width - margin);
+        float gy = Mathf.Clamp(Screen.height - y, 150f, Screen.height - 90f);
+
+        Color c = Bright(objectiveColor);
+        float size = 20f + 3f * Mathf.Sin(Time.time * 5f);
+        DrawDiamond(new Vector2(x, gy), size + 6f, new Color(0f, 0f, 0f, 0.7f));
+        DrawDiamond(new Vector2(x, gy), size, c);
+
+        int meters = Mathf.RoundToInt(Vector3.Distance(player.transform.position, objectivePos));
+        Hud.Label(new Rect(x - 90f, gy + 16f, 180f, 22f), objectiveShort + "  " + meters + " M", 14, c, TextAnchor.MiddleCenter);
+    }
+
+    void DrawMap()
+    {
         float size = bigMap ? Mathf.Min(Screen.height * 0.8f, 600f) : 190f;
         Rect r = bigMap
             ? new Rect((Screen.width - size) / 2f, (Screen.height - size) / 2f, size, size)
@@ -227,13 +295,17 @@ public class GuideSystem : MonoBehaviour
         GUI.color = Color.white;
         GUI.DrawTexture(r, mapTex);
 
-        // objective marker only while the route hint is active
-        if (hintTimer > 0f)
+        // target marker in the key / door colour (always shown while the guide is on)
+        if (showGuide && hasObjective)
         {
             Vector2 o = WorldToMap(objectivePos, r);
-            GUI.color = Color.red;
-            GUI.DrawTexture(new Rect(o.x - 4f, o.y - 4f, 8f, 8f), Texture2D.whiteTexture);
+            float s = 8f + 2f * Mathf.Sin(Time.time * 6f);
+            GUI.color = Color.black;
+            GUI.DrawTexture(new Rect(o.x - s / 2f - 1.5f, o.y - s / 2f - 1.5f, s + 3f, s + 3f), Texture2D.whiteTexture);
+            GUI.color = Bright(objectiveColor);
+            GUI.DrawTexture(new Rect(o.x - s / 2f, o.y - s / 2f, s, s), Texture2D.whiteTexture);
             GUI.color = Color.white;
+            Hud.Label(new Rect(r.x, r.yMax + 2f, r.width, 18f), "TARGET: " + objectiveShort, 12, Bright(objectiveColor), TextAnchor.UpperCenter);
         }
 
         // player arrow
@@ -243,5 +315,7 @@ public class GuideSystem : MonoBehaviour
         GUI.DrawTexture(new Rect(p.x - 7f, p.y - 7f, 14f, 14f), arrowTex);
         GUI.matrix = Matrix4x4.identity;
         GUI.color = Color.white;
+
+        Hud.Label(new Rect(r.x, r.y, r.width, 18f), "N", 12, Hud.Green, TextAnchor.UpperCenter);
     }
 }

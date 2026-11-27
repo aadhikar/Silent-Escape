@@ -15,6 +15,9 @@ public class GameManager : MonoBehaviour
     MazeGenerator maze;
     EnemyBase[] enemies = new EnemyBase[0];
     bool isDanger;
+    GuideSystem guide;
+
+    public EnemyBase[] Enemies { get { return enemies; } }
     string endMessage = "";
     string hint = "";
     float hintTimer;
@@ -42,7 +45,7 @@ public class GameManager : MonoBehaviour
         GetComponent<SpawnManager>().SpawnEnemies(maze);
         enemies = FindObjectsByType<EnemyBase>(FindObjectsSortMode.None);
 
-        GuideSystem guide = gameObject.AddComponent<GuideSystem>();
+        guide = gameObject.AddComponent<GuideSystem>();
         guide.Init(maze, player);
     }
 
@@ -180,6 +183,17 @@ public class GameManager : MonoBehaviour
             GUI.DrawTexture(slot, Texture2D.whiteTexture);
             GUI.color = Color.white;
             Hud.Label(slot, Door.NameOf(i), 14, has ? Color.white : new Color(0.7f, 0.7f, 0.7f), TextAnchor.MiddleCenter);
+
+            // the slot you need next pulses with a white frame
+            if (guide != null && guide.ObjectiveLevel == i)
+            {
+                GUI.color = new Color(1f, 1f, 1f, 0.55f + 0.45f * Mathf.Sin(Time.time * 6f));
+                GUI.DrawTexture(new Rect(slot.x - 3f, slot.y - 3f, slot.width + 6f, 3f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(slot.x - 3f, slot.yMax, slot.width + 6f, 3f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(slot.x - 3f, slot.y, 3f, slot.height), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(slot.xMax, slot.y, 3f, slot.height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
         }
         Hud.Label(new Rect(10, 40, 600, 24), "FACILITY SEED " + maze.CurrentSeed, 14, Hud.Green);
 
@@ -188,7 +202,7 @@ public class GameManager : MonoBehaviour
         GUI.DrawTexture(new Rect(0, Screen.height - 36, Screen.width, 36), Texture2D.whiteTexture);
         GUI.color = Color.white;
         Hud.Label(new Rect(0, Screen.height - 34, Screen.width, 30),
-            "[SHIFT] RUN    [C] CROUCH    [F] FLASHLIGHT    [M] MAP    [H] ROUTE", 15, Hud.Green, TextAnchor.MiddleCenter);
+            "[SHIFT] RUN    [C] CROUCH    [F] FLASHLIGHT    [M] MAP    [H] ROUTE    [G] GUIDE", 15, Hud.Green, TextAnchor.MiddleCenter);
 
         Hud.Label(new Rect(0, Screen.height / 2f - 15, Screen.width, 30), "+", 20, Color.white, TextAnchor.MiddleCenter);
 

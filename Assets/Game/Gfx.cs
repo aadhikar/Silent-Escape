@@ -108,4 +108,19 @@ public static class Gfx
             return c;
         });
     }
+
+    // Dark grey roll-up shutter: horizontal slats
+    public static Texture2D ShutterTexture()
+    {
+        return MakeTexture(64, (x, y) =>
+        {
+            float n = Mathf.PerlinNoise(x * 0.3f, y * 0.3f) * 0.08f;
+            Color c = Shade(new Color(0.30f, 0.32f, 0.35f), 1f - n);
+            int slat = y % 16;                              // 4 slats per picture
+            if (slat < 2) c = Shade(c, 0.45f);              // dark gap between slats
+            else if (slat < 4) c = Shade(c, 1.2f);          // light edge on top of each slat
+            if (x < 2 || x > 61) c = Shade(c, 0.6f);
+            return c;
+        });
+    }
 }
