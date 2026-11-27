@@ -1,6 +1,6 @@
-# Silent Escape 🎮
+# Stealth Escape 🎮
 
-**Silent Escape** is a 3D game developed as a team project using Unity.
+**Stealth Escape** is a 3D game developed as a team project using Unity.
 
 ## Built With
 
